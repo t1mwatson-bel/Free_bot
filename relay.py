@@ -11,7 +11,8 @@ from aiogram.types import Message
 # КОНФИГ — ВСЁ ИЗ ОКРУЖЕНИЯ (НА ХОСТИНГЕ)
 # =====================================================================
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+print(f"[BOOT] Токен получен: {'ДА' if BOT_TOKEN else 'НЕТ'}, длина: {len(BOT_TOKEN)}", flush=True)
 
 # Интервал публикации (сек) — рандом между MIN и MAX
 PUBLISH_INTERVAL_MIN = int(os.getenv("PUBLISH_INTERVAL_MIN", 15 * 60))
