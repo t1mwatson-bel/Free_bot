@@ -85,20 +85,6 @@ def extract_forecast_line(text: str, ftype: str):
             return None
         return f"🎯 Игра: #N{m.group(1)}: {m.group(2)}"
 
-    if ftype == "value21":
-        m = RE_VALUE21.search(text)
-        if not m:
-            return None
-        return f"🎯 Игра: #N{m.group(1)}: {m.group(2).upper()}"
-
-    if ftype == "exact21":
-        m = RE_EXACT21.search(text)
-        if not m:
-            return None
-        games = m.group(1).replace(" ", "")
-        cards = m.group(2).replace("\ufe0f", "")
-        return f"🎯 Игры: {games}: {cards}"
-
     return None
 
 
