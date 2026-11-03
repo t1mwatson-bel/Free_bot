@@ -336,11 +336,30 @@ async def publisher_loop():
 
 async def main():
     if not BOT_TOKEN:
-        print("[x] BOT_TOKEN не задан в окружении")
+        print("[x] BOT_TOKEN не задан", flush=True)
         return
 
-    print("[✓] relay запущен")
+    print("[BOOT] Проверка переменных каналов:", flush=True)
+    for src, cfg in PAIRS.items():
+        print(f"  {src} -> {cfg['target']} ({cfg['type']})", flush=True)
+
+    print("[BOOT] Инициализация бота...", flush=True)
+    try:
+        me = await bot.get_me()
+        print(f"[BOOT] Бот авторизован: @{me.username}", flush=True)
+        
+        # ВАЖНО: Удаляем вебхук, чтобы polling работал!
+        await bot.delete_webhook(drop_pending_updates=True)
+        print("[BOOT] Вебхук удален, можно слушать polling", flush=True)
+        
+    except Exception as e:
+        print(f"[FATAL] Ошибка: {e}", flush=True)
+        return
+
+    print("[✓] relay запущен", flush=True)
     asyncio.create_task(publisher_loop())
+    
+    print("[BOOT] Стартуем polling...", flush=True)
     await dp.start_polling(bot)
 
 
