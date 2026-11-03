@@ -14,48 +14,57 @@ from aiogram.types import Message
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 print(f"[BOOT] Токен получен: {'ДА' if BOT_TOKEN else 'НЕТ'}, длина: {len(BOT_TOKEN)}", flush=True)
 
-# Интервал публикации (сек) — рандом между MIN и MAX
-# По умолчанию: от 10 до 15 минут (10*60 = 600 сек, 15*60 = 900 сек)
 PUBLISH_INTERVAL_MIN = int(os.getenv("PUBLISH_INTERVAL_MIN", 10 * 60))
 PUBLISH_INTERVAL_MAX = int(os.getenv("PUBLISH_INTERVAL_MAX", 15 * 60))
-
-# Лимит Telegram на редактирование — 48ч. Берём 47ч с запасом.
 EDIT_TTL_HOURS = int(os.getenv("EDIT_TTL_HOURS", 47))
 
 # =====================================================================
-# ПАРА «ИСТОЧНИК → ЦЕЛЬ» + ШАПКА (ОСТАВЛЕН ТОЛЬКО 1 КАНАЛ)
+# 2 ПАРЫ «ИСТОЧНИК → ЦЕЛЬ» (МАСТИ 21 И МАСТИ БАККАРА)
 # =====================================================================
 
-PAIRS = {
-    os.getenv("SRC1", "").strip(): {
-        "target": os.getenv("DST1", "").strip(),
+SRC1 = os.getenv("SRC1", "").strip()
+DST1 = os.getenv("DST1", "").strip()
+
+SRC2 = os.getenv("SRC2", "").strip()
+DST2 = os.getenv("DST2", "").strip()
+
+PAIRS = {}
+
+if SRC1 and DST1:
+    PAIRS[SRC1] = {
+        "target": DST1,
         "header": "♠️ Масть 21 классик",
         "type": "suit21",
-    },
-}
+    }
 
-# Если SRC1 не задан, бот не должен падать, но должен предупредить
-if not PAIRS.get(""):
-    pass # Это просто заглушка, чтобы не ругался линтер
+if SRC2 and DST2:
+    PAIRS[SRC2] = {
+        "target": DST2,
+        "header": "🎴 Масть Баккара игрок",
+        "type": "suit_bak",
+    }
 
 # =====================================================================
-# РЕГУЛЯРКА ПОД МАСТИ 21 КЛАССИК
+# РЕГУЛЯРКИ ПОД КАЖДЫЙ ТИП
 # =====================================================================
 
-# Формат: 🎯 Игра: #N437 ♠️
+# 1) Масти 21 классик: 🎯 Игра: #N437 ♠️
 RE_SUIT21 = re.compile(
     r"🎯\s*Игра:\s*#N(\d+)\s*([♠♣♦♥])\ufe0f?",
     re.IGNORECASE,
 )
 
+# 2) Масти баккара: 🎯 Игра: #N887: ♣️
+RE_SUIT_BAK = re.compile(
+    r"🎯\s*Игра:\s*#N(\d+):\s*([♠♣♦♥])\ufe0f?",
+    re.IGNORECASE,
+)
+
 # =====================================================================
-# ФИЛЬТР / ПАРСИНГ
+# ФИЛЬТР / ПАРСИНГ ПО ТИПУ
 # =====================================================================
 
 def extract_forecast_line(text: str, ftype: str):
-    """
-    Возвращает «чистую» строку прогноза (без ставки) или None.
-    """
     if not text:
         return None
 
@@ -65,11 +74,15 @@ def extract_forecast_line(text: str, ftype: str):
             return None
         return f"🎯 Игра: #N{m.group(1)} {m.group(2)}"
 
+    if ftype == "suit_bak":
+        m = RE_SUIT_BAK.search(text)
+        if not m:
+            return None
+        return f"🎯 Игра: #N{m.group(1)}: {m.group(2)}"
+
     return None
 
-
 def get_result_mark(text: str) -> str:
-    """Возвращает '✅', '❌' или ''."""
     if not text:
         return ""
     if "✅" in text:
@@ -82,23 +95,8 @@ def get_result_mark(text: str) -> str:
 # СОСТОЯНИЕ
 # =====================================================================
 
-# source_channel -> {
-#   "text": чистый прогноз,
-#   "msg_id": id в источнике,
-#   "result": "✅"/"❌"/"",
-#   "at": datetime
-# }
 last_forecast = {}
-
-# (source_channel, source_msg_id) -> {
-#   "target_channel": ...,
-#   "target_msg_id": ...,
-#   "published_at": datetime,
-#   "result_at_publish": "✅"/"❌"/"",
-# }
 published = {}
-
-# уже опубликованные (source_channel, source_msg_id) — чтобы не постить дважды
 posted = set()
 
 # =====================================================================
@@ -108,12 +106,10 @@ posted = set()
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-
 def channel_key(chat) -> str:
     if chat.username:
         return "@" + chat.username
     return str(chat.id)
-
 
 # =====================================================================
 # НОВЫЙ ПОСТ В ИСТОЧНИКЕ
@@ -169,24 +165,20 @@ async def on_edited_channel_post(message: Message):
     result = get_result_mark(raw)
     source_msg_id = message.message_id
 
-    # 1) обновляем last_forecast, если это последний прогноз канала
     if key in last_forecast and last_forecast[key]["msg_id"] == source_msg_id:
         last_forecast[key]["text"] = clean
         last_forecast[key]["result"] = result
         last_forecast[key]["at"] = datetime.utcnow()
 
-    # 2) если этот прогноз уже опубликован — редактируем сообщение в цели
     rec = published.get((key, source_msg_id))
     if not rec:
         return
 
-    # TTL
     age = datetime.utcnow() - rec["published_at"]
     if age > timedelta(hours=EDIT_TTL_HOURS):
         print(f"[!] TTL истёк: {key} msg={source_msg_id}", flush=True)
         return
 
-    # если результат не изменился — не дёргаем Telegram
     if rec["result_at_publish"] == result:
         return
 
@@ -223,7 +215,6 @@ async def publisher_loop():
         print(f"[~] следующая публикация через {delay // 60} мин", flush=True)
         await asyncio.sleep(delay)
 
-        # каналы, у которых есть прогноз и он ещё не опубликован
         available = [
             ch for ch, item in last_forecast.items()
             if (ch, item["msg_id"]) not in posted
@@ -272,23 +263,19 @@ async def main():
         print("[x] BOT_TOKEN не задан", flush=True)
         return
 
-    # Проверка, что SRC1 и DST1 заданы
-    src = os.getenv("SRC1", "").strip()
-    dst = os.getenv("DST1", "").strip()
-    
-    if not src or not dst:
-        print("[FATAL] SRC1 или DST1 не заданы на хостинге!", flush=True)
+    if not PAIRS:
+        print("[FATAL] Ни одна пара SRC/DST не задана на хостинге!", flush=True)
         return
 
     print("[BOOT] Проверка переменных каналов:", flush=True)
-    print(f"  {src} -> {dst}", flush=True)
+    for src, cfg in PAIRS.items():
+        print(f"  {src} -> {cfg['target']} ({cfg['type']})", flush=True)
 
     print("[BOOT] Инициализация бота...", flush=True)
     try:
         me = await bot.get_me()
         print(f"[BOOT] Бот авторизован: @{me.username}", flush=True)
         
-        # ВАЖНО: Удаляем вебхук, чтобы polling работал!
         await bot.delete_webhook(drop_pending_updates=True)
         print("[BOOT] Вебхук удален, можно слушать polling", flush=True)
         
