@@ -15,55 +15,41 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 print(f"[BOOT] Токен получен: {'ДА' if BOT_TOKEN else 'НЕТ'}, длина: {len(BOT_TOKEN)}", flush=True)
 
 # Интервал публикации (сек) — рандом между MIN и MAX
-PUBLISH_INTERVAL_MIN = int(os.getenv("PUBLISH_INTERVAL_MIN", 10 * 20))
-PUBLISH_INTERVAL_MAX = int(os.getenv("PUBLISH_INTERVAL_MAX", 15 * 20))
+# По умолчанию: от 10 до 15 минут (10*60 = 600 сек, 15*60 = 900 сек)
+PUBLISH_INTERVAL_MIN = int(os.getenv("PUBLISH_INTERVAL_MIN", 10 * 60))
+PUBLISH_INTERVAL_MAX = int(os.getenv("PUBLISH_INTERVAL_MAX", 15 * 60))
 
 # Лимит Telegram на редактирование — 48ч. Берём 47ч с запасом.
 EDIT_TTL_HOURS = int(os.getenv("EDIT_TTL_HOURS", 47))
 
 # =====================================================================
-# 4 ПАРЫ «ИСТОЧНИК → ЦЕЛЬ» + ШАПКА
+# ПАРА «ИСТОЧНИК → ЦЕЛЬ» + ШАПКА (ОСТАВЛЕН ТОЛЬКО 1 КАНАЛ)
 # =====================================================================
-#
-# Формат: SOURCE_CHANNEL -> {target, header, type}
-#
-# type нужен, чтобы понимать, как парсить прогноз.
-#   "suit21"   — масти 21 классик
-#   "suit_bak" — масти баккара
-#
 
 PAIRS = {
-    os.getenv("SRC1", "@src1"): {
-        "target": os.getenv("DST1", "@dst1"),
+    os.getenv("SRC1", "").strip(): {
+        "target": os.getenv("DST1", "").strip(),
         "header": "♠️ Масть 21 классик",
         "type": "suit21",
     },
-    os.getenv("SRC2", "@src2"): {
-        "target": os.getenv("DST2", "@dst2"),
-        "header": "🎴 Масть Баккара игрок",
-        "type": "suit_bak",
-    },
 }
 
+# Если SRC1 не задан, бот не должен падать, но должен предупредить
+if not PAIRS.get(""):
+    pass # Это просто заглушка, чтобы не ругался линтер
+
 # =====================================================================
-# РЕГУЛЯРКИ ПОД КАЖДЫЙ ТИП
+# РЕГУЛЯРКА ПОД МАСТИ 21 КЛАССИК
 # =====================================================================
 
-# 1) Масти 21 классик: 🎯 Игра: #N437 ♠️
+# Формат: 🎯 Игра: #N437 ♠️
 RE_SUIT21 = re.compile(
     r"🎯\s*Игра:\s*#N(\d+)\s*([♠♣♦♥])\ufe0f?",
     re.IGNORECASE,
 )
 
-# 2) Масти баккара: 🎯 Игра: #N887: ♣️
-RE_SUIT_BAK = re.compile(
-    r"🎯\s*Игра:\s*#N(\d+):\s*([♠♣♦♥])\ufe0f?",
-    re.IGNORECASE,
-
-)
-
 # =====================================================================
-# ФИЛЬТР / ПАРСИНГ ПО ТИПУ
+# ФИЛЬТР / ПАРСИНГ
 # =====================================================================
 
 def extract_forecast_line(text: str, ftype: str):
@@ -79,28 +65,18 @@ def extract_forecast_line(text: str, ftype: str):
             return None
         return f"🎯 Игра: #N{m.group(1)} {m.group(2)}"
 
-    if ftype == "suit_bak":
-        m = RE_SUIT_BAK.search(text)
-        if not m:
-            return None
-        return f"🎯 Игра: #N{m.group(1)}: {m.group(2)}"
-
     return None
-
-
-def is_edited_result(text: str) -> bool:
-    """Проверяет, есть ли ✅ или ❌ (результат)."""
-    return bool(text) and ("✅" in text or "❌" in text)
 
 
 def get_result_mark(text: str) -> str:
     """Возвращает '✅', '❌' или ''."""
+    if not text:
+        return ""
     if "✅" in text:
         return "✅"
     if "❌" in text:
         return "❌"
     return ""
-
 
 # =====================================================================
 # СОСТОЯНИЕ
@@ -168,9 +144,9 @@ async def on_channel_post(message: Message):
 
     print(
         f"[+] {key} ({cfg['type']}) msg={message.message_id} "
-        f"result='{result}' → {clean}"
+        f"result='{result}' → {clean}",
+        flush=True
     )
-
 
 # =====================================================================
 # РЕДАКТИРОВАНИЕ ПОСТА В ИСТОЧНИКЕ (✅ / ❌)
@@ -191,10 +167,6 @@ async def on_edited_channel_post(message: Message):
         return
 
     result = get_result_mark(raw)
-    if not result:
-        # редактирование без результата — просто обновим текст
-        pass
-
     source_msg_id = message.message_id
 
     # 1) обновляем last_forecast, если это последний прогноз канала
@@ -211,7 +183,7 @@ async def on_edited_channel_post(message: Message):
     # TTL
     age = datetime.utcnow() - rec["published_at"]
     if age > timedelta(hours=EDIT_TTL_HOURS):
-        print(f"[!] TTL истёк: {key} msg={source_msg_id}")
+        print(f"[!] TTL истёк: {key} msg={source_msg_id}", flush=True)
         return
 
     # если результат не изменился — не дёргаем Telegram
@@ -235,11 +207,11 @@ async def on_edited_channel_post(message: Message):
         rec["result_at_publish"] = result
         print(
             f"[✎] обновил {key} msg={source_msg_id} → "
-            f"{target_channel} msg={target_msg_id} ({result or 'без результата'})"
+            f"{target_channel} msg={target_msg_id} ({result or 'без результата'})",
+            flush=True
         )
     except Exception as e:
-        print(f"[x] ошибка редактирования: {e}")
-
+        print(f"[x] ошибка редактирования: {e}", flush=True)
 
 # =====================================================================
 # ПУБЛИКАЦИЯ
@@ -248,7 +220,7 @@ async def on_edited_channel_post(message: Message):
 async def publisher_loop():
     while True:
         delay = random.randint(PUBLISH_INTERVAL_MIN, PUBLISH_INTERVAL_MAX)
-        print(f"[~] следующая публикация через {delay // 60} мин")
+        print(f"[~] следующая публикация через {delay // 60} мин", flush=True)
         await asyncio.sleep(delay)
 
         # каналы, у которых есть прогноз и он ещё не опубликован
@@ -258,7 +230,7 @@ async def publisher_loop():
         ]
 
         if not available:
-            print("[!] нет свежих прогнозов — пропуск")
+            print("[!] нет свежих прогнозов — пропуск", flush=True)
             continue
 
         source_channel = random.choice(available)
@@ -285,11 +257,11 @@ async def publisher_loop():
 
             print(
                 f"[✓] опубликовал {source_channel} → {target_channel} "
-                f"msg={sent.message_id} ('{item['result'] or 'без результата'}')"
+                f"msg={sent.message_id} ('{item['result'] or 'без результата'}')",
+                flush=True
             )
         except Exception as e:
-            print(f"[x] ошибка публикации: {e}")
-
+            print(f"[x] ошибка публикации: {e}", flush=True)
 
 # =====================================================================
 # ЗАПУСК
@@ -300,9 +272,16 @@ async def main():
         print("[x] BOT_TOKEN не задан", flush=True)
         return
 
+    # Проверка, что SRC1 и DST1 заданы
+    src = os.getenv("SRC1", "").strip()
+    dst = os.getenv("DST1", "").strip()
+    
+    if not src or not dst:
+        print("[FATAL] SRC1 или DST1 не заданы на хостинге!", flush=True)
+        return
+
     print("[BOOT] Проверка переменных каналов:", flush=True)
-    for src, cfg in PAIRS.items():
-        print(f"  {src} -> {cfg['target']} ({cfg['type']})", flush=True)
+    print(f"  {src} -> {dst}", flush=True)
 
     print("[BOOT] Инициализация бота...", flush=True)
     try:
@@ -322,7 +301,6 @@ async def main():
     
     print("[BOOT] Стартуем polling...", flush=True)
     await dp.start_polling(bot)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
