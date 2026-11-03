@@ -15,8 +15,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 print(f"[BOOT] Токен получен: {'ДА' if BOT_TOKEN else 'НЕТ'}, длина: {len(BOT_TOKEN)}", flush=True)
 
 # Интервал публикации (сек) — рандом между MIN и MAX
-PUBLISH_INTERVAL_MIN = int(os.getenv("PUBLISH_INTERVAL_MIN", 15 * 60))
-PUBLISH_INTERVAL_MAX = int(os.getenv("PUBLISH_INTERVAL_MAX", 30 * 60))
+PUBLISH_INTERVAL_MIN = int(os.getenv("PUBLISH_INTERVAL_MIN", 10 * 20))
+PUBLISH_INTERVAL_MAX = int(os.getenv("PUBLISH_INTERVAL_MAX", 15 * 20))
 
 # Лимит Telegram на редактирование — 48ч. Берём 47ч с запасом.
 EDIT_TTL_HOURS = int(os.getenv("EDIT_TTL_HOURS", 47))
@@ -30,8 +30,6 @@ EDIT_TTL_HOURS = int(os.getenv("EDIT_TTL_HOURS", 47))
 # type нужен, чтобы понимать, как парсить прогноз.
 #   "suit21"   — масти 21 классик
 #   "suit_bak" — масти баккара
-#   "value21"  — значение 21 классик игрок
-#   "exact21"  — точная карта 21
 #
 
 PAIRS = {
@@ -44,16 +42,6 @@ PAIRS = {
         "target": os.getenv("DST2", "@dst2"),
         "header": "🎴 Масть Баккара игрок",
         "type": "suit_bak",
-    },
-    os.getenv("SRC3", "@src3"): {
-        "target": os.getenv("DST3", "@dst3"),
-        "header": "🔢 Значение 21 классик игроку",
-        "type": "value21",
-    },
-    os.getenv("SRC4", "@src4"): {
-        "target": os.getenv("DST4", "@dst4"),
-        "header": "🃏 Точные карты в 21",
-        "type": "exact21",
     },
 }
 
@@ -71,20 +59,7 @@ RE_SUIT21 = re.compile(
 RE_SUIT_BAK = re.compile(
     r"🎯\s*Игра:\s*#N(\d+):\s*([♠♣♦♥])\ufe0f?",
     re.IGNORECASE,
-)
 
-# 3) Значение 21 классик игрок: 🎯 Игра: #N442: 8
-RE_VALUE21 = re.compile(
-    r"🎯\s*Игра:\s*#N(\d+):\s*(10|[2-9AJQKA])",
-    re.IGNORECASE,
-)
-
-# 4) Точная карта 21: 🎯 Игры: 858-861: J♠️ или J♣️
-RE_EXACT21 = re.compile(
-    r"🎯\s*Игры?:\s*(\d+(?:\s*-\s*\d+)?):\s*"
-    r"((?:10|[2-9AJQKA])[♠♣♦♥]\ufe0f?"
-    r"(?:\s*или\s*(?:10|[2-9AJQKA])[♠♣♦♥]\ufe0f?)?)",
-    re.IGNORECASE,
 )
 
 # =====================================================================
